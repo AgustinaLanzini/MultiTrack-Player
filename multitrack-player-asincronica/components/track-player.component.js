@@ -10,9 +10,10 @@ export class WCTrackPlayer extends HTMLElement {
         this.mixer = mixer;
         this.audioCtx = audioCtx;
         this.file = file;
+
         this.isMuted = false;
         this.isSolo = false;
-        this.isAmp = false;        
+        this.isAmp = false;
 
     }
 
@@ -60,9 +61,8 @@ export class WCTrackPlayer extends HTMLElement {
                 return this.audioCtx.decodeAudioData(read.target.result)
                     .then(decodedData => {
                         this.buffer = decodedData;
-                        this.original = this._clone(this.buffer);
                         
-                        console.log("buffers fulled!");
+                        console.log("buffer fulled!");
                         
                         this._drawWaveform(decodedData);
                         
@@ -76,48 +76,13 @@ export class WCTrackPlayer extends HTMLElement {
     }
 
     _drawWaveform(buffer) {
-        const canvas = document.createElement("canvas");
-        canvas.width = 1600; //TODO: set width relative to duration
-        canvas.height = 120; 
-         
-        this.querySelector('.waveform').replaceChild(canvas, this.querySelector('.waveform canvas'));
-
+        let canvas = this.querySelector('.canvas-waveform');
         let pcm = buffer.getChannelData(0); // Float32Array describing left channel  
         
         const offscreen = canvas.transferControlToOffscreen();
-        
-        let asyncDrawing = async () => {
-           if (window.actual < window.workersSize){
-                let worker = window.workers[window.actual];
-                window.workersWorking[window.actual] = true;
-                window.promises[window.actual] = new Promise((resolve, reject) => { window.solvers[window.actual] = resolve;});
-                worker.postMessage({ canvas: offscreen, buffer: pcm }, [offscreen]); 
-                window.actual = window.actual + 1;
-           }
-           else {
-                let drawing = false;
-                let response = null;
-                while (!drawing){
-                    if(!drawing){
-                        let waitForWorker = Promise.race(window.promises);
-                        response = await waitForWorker;
-                    }
-                    if (!workersWorking[response]){
-                        let worker = window.workers[response];
-                        window.workersWorking[response] = true;
-                        drawing = true;
-                        window.promises[response] = new Promise((resolve, reject) => { window.solvers[response] = resolve;});
-                        worker.postMessage({ canvas: offscreen, buffer: pcm }, [offscreen]); 
-                    }
-                }
-
-            }
-        }
-        
-        asyncDrawing();
-
+        const worker = new Worker('js/worker.js');
+         worker.postMessage({ canvas: offscreen, buffer: pcm }, [offscreen]); // transferable arraybuffer
     }
-
 
     start() {
 
@@ -148,7 +113,8 @@ export class WCTrackPlayer extends HTMLElement {
             this.snapGain = this._gainNode.gain.value;
             this._gainNode.gain.value = 0;
             this.querySelector('.track').classList.add('muted');
-        } else {
+        }
+        else {
             this._gainNode.gain.value = this.snapGain;
             this.querySelector('.track').classList.remove('muted');
         }
@@ -183,29 +149,8 @@ export class WCTrackPlayer extends HTMLElement {
             this.querySelector('.track').classList.add('amp');
         } else {
             //TODO: back to original buffer
-            for (let i = 0; i < this.buffer.numberOfChannels; i++) {
-                this.buffer.getChannelData(i).set(this.original.getChannelData(i));
-            }
-
             this.querySelector('.track').classList.remove('amp');
         }
-
-        this._drawWaveform(this.buffer);
-
-    }
-
-    _clone(buffer) {
-        const bufferClone = this.audioCtx.createBuffer(
-            buffer.numberOfChannels,
-            buffer.length,
-            buffer.sampleRate);
-
-        for (let i = 0; i < this.buffer.numberOfChannels; i++) {
-            bufferClone.copyToChannel(buffer.getChannelData(i), i)
-        }
-
-        return bufferClone;
-
     }
 
     _template() {
